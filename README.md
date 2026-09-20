@@ -214,6 +214,66 @@ If you prefer, you can [install Go](https://go.dev/dl/) and build from source (r
 go install github.com/schollz/croc/v11@latest
 ```
 
+## Reproducible integration stack (Docker Compose)
+
+The `deploy/` directory contains a self-contained orchestration that builds
+the `croc` binary from the **current commit**, starts an isolated relay, and
+runs a real `croc send` / `croc` receive round trip (fixed fixture file +
+SHA-256 verification) against that binary. It never touches a host-installed
+`croc`, never runs `go install`, and never publishes ports to the host.
+
+One command (only Docker is required; no Go, no GOPATH, no host croc):
+
+```bash
+deploy/run.sh        # or: make integration-test
+```
+
+The script exits non-zero when any phase fails, with distinct codes and
+log prefixes so you can tell them apart:
+
+- `11` build failed — `[orchestrator]`
+- `12` relay health check failed or timed out — `[orchestrator]` + relay logs
+- `13` integration test failed — `[integration]` / `[send]` / `[recv]`
+
+Run a second, fully isolated stack in parallel on the same machine (separate
+network, containers, ports, and room code namespace):
+
+```bash
+COMPOSE_PROJECT_NAME=croc-it-b deploy/run.sh
+```
+
+Clean up a stack manually (runs also clean up after themselves):
+
+```bash
+make integration-clean                                          # default stack
+COMPOSE_PROJECT_NAME=croc-it-b make integration-clean           # the second one
+```
+
+The default stack name is `croc-it-<repo directory name>`, so two checkouts
+of this repository on the same machine never share a compose namespace.
+
+Everything is injectable via environment variables, with collision-free
+defaults:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `COMPOSE_PROJECT_NAME` | `croc-it-<repo dir>` | stack namespace (parallel isolation) |
+| `CROC_RELAY_PORTS` | `9009,9010,9011,9012,9013` | relay listener ports (in-stack only) |
+| `CROC_TEST_CODE` | `croc-it-room` | room code used by the test transfer |
+| `CROC_TRANSFER_TIMEOUT` | `60` | per-transfer timeout in seconds |
+| `CROC_IT_WAIT_TIMEOUT` | `120` | health-check wait budget in seconds |
+| `CROC_IT_KEEP` | unset | set to `1` to keep containers for debugging |
+
+Reproducibility notes:
+
+- Base images are pinned by digest (`golang:1.27-alpine@sha256:…`,
+  `alpine:3.22@sha256:…` in `deploy/Dockerfile`); no `latest` tags anywhere.
+- `GOTOOLCHAIN=local` and `GOFLAGS=-mod=readonly` make the build fail loudly
+  instead of silently downloading a different toolchain or rewriting modules
+  when the network is restricted.
+- Fixture input (`deploy/fixtures/`) is mounted read-only; test output lives
+  in a `mktemp` directory inside the container and is destroyed with it.
+
 ### On Android
 
 There are F-Droid apps available:

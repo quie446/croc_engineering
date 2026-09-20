@@ -1,0 +1,57 @@
+# Integration-test orchestration for croc.
+#
+# Isolation model: every stack runs under a compose project name
+# (COMPOSE_PROJECT_NAME / `docker compose -p`). Compose namespaces the
+# network, containers, and built images by that name, so two stacks on the
+# same machine never share ports, room codes, or relays. No port is ever
+# published to the host, so the host's own croc (or anything else listening
+# on 9009+) can never be picked up by accident.
+#
+# Injectables (all optional, defaults shown):
+#   CROC_RELAY_PORTS=9009,9010,9011,9012,9013  relay listener ports (in-stack)
+#   CROC_TEST_CODE=croc-it-room                room code used by the transfer
+#   CROC_TRANSFER_TIMEOUT=60                   per-transfer timeout (seconds)
+services:
+  relay:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    command: ["croc", "relay", "--ports", "${CROC_RELAY_PORTS:-9009,9010,9011,9012,9013}"]
+    healthcheck:
+      # Fails unless every relay port actually accepts TCP connections;
+      # "container is up" alone does not count as healthy.
+      test:
+        - CMD-SHELL
+        - |
+          for port in $$(echo '${CROC_RELAY_PORTS:-9009,9010,9011,9012,9013}' | tr ',' ' '); do
+            nc -z -w 3 127.0.0.1 "$$port" || exit 1
+          done
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks:
+      - fabric
+
+  tester:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    depends_on:
+      relay:
+        condition: service_healthy
+    environment:
+      CROC_RELAY_HOST: relay
+      CROC_RELAY_PORTS: ${CROC_RELAY_PORTS:-9009,9010,9011,9012,9013}
+      CROC_TEST_CODE: ${CROC_TEST_CODE:-croc-it-room}
+      CROC_TRANSFER_TIMEOUT: ${CROC_TRANSFER_TIMEOUT:-60}
+    volumes:
+      # Fixture input is mounted read-only; test output goes to a mktemp
+      # directory inside the container and is destroyed with it.
+      - ./fixtures:/fixtures:ro
+    command: ["croc-integration-test"]
+    networks:
+      - fabric
+
+networks:
+  fabric:

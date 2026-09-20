@@ -8,6 +8,18 @@ STORE_DOWNLOADS ?= 100
 
 .PHONY: build web-assets build-web serve
 
+.PHONY: integration-test integration-clean
+
+# Reproducible end-to-end check: builds this commit in Docker, starts an
+# isolated relay, and runs a real send/receive round trip against it.
+# Run a second stack in parallel with:
+#   COMPOSE_PROJECT_NAME=croc-it-b make integration-test
+integration-test:
+	deploy/run.sh
+
+integration-clean:
+	deploy/run.sh --clean
+
 build:
 	CGO_ENABLED=0 go build $(BUILD_FLAGS) -ldflags="$(LDFLAGS)" -o $(BINARY) .
 
