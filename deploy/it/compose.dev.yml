@@ -1,0 +1,9 @@
+# Optional overlay (set CROC_IT_FIXTURES_DIR): bind-mount a dev-seeded fixture
+# directory into the e2e container at /fixtures (read-only). If it contains
+# payload.bin, the e2e test transfers that file instead of the generated one.
+# The receive output still goes to the project-scoped `received` volume, so
+# dev fixtures and test outputs never mix.
+services:
+  e2e:
+    volumes:
+      - ${CROC_IT_FIXTURES_DIR:?set CROC_IT_FIXTURES_DIR}:/fixtures:ro

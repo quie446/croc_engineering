@@ -1,0 +1,81 @@
+# croc integration-test orchestration. Not for production use.
+#
+# Everything is scoped to the compose project (CROC_IT_PROJECT, default
+# croc-it-<repo path hash>): networks, volumes, container names. No host ports
+# are published, so two stacks on one machine cannot collide. Run a second
+# stack with:
+#   CROC_IT_PROJECT=croc-it-2 ./deploy/it/run.sh
+#
+# Injected by deploy/it/run.sh (all overridable):
+#   CROC_IT_PROJECT     compose project name; isolates parallel stacks
+#   CROC_IT_PORTS       comma-separated relay ports (container-internal)
+#   CROC_IT_RELAY_PORT  first of CROC_IT_PORTS, used by clients
+#   CROC_IT_CODE        room code for the e2e transfer
+#   CROC_IT_REVISION    git commit stamped into the image
+
+services:
+  relay:
+    build:
+      context: ../..
+      dockerfile: deploy/it/Dockerfile
+      target: runtime
+      args:
+        GIT_REVISION: ${CROC_IT_REVISION:-unknown}
+    image: croc-it-runtime:${CROC_IT_PROJECT}
+    pull_policy: never
+    command: ["relay", "--ports", "${CROC_IT_PORTS}"]
+    environment:
+      CROC_RELAY_PORTS: ${CROC_IT_PORTS}
+    healthcheck:
+      # "container is up" is not enough: every relay port must accept TCP.
+      test:
+        - CMD-SHELL
+        - 'for port in $$(echo "$${CROC_RELAY_PORTS}" | tr "," " "); do
+             nc -z -w 3 127.0.0.1 $$port || exit 1;
+           done'
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+    networks: [it]
+    stop_grace_period: 2s
+
+  unit:
+    build:
+      context: ../..
+      dockerfile: deploy/it/Dockerfile
+      target: tester
+      args:
+        GIT_REVISION: ${CROC_IT_REVISION:-unknown}
+    image: croc-it-tester:${CROC_IT_PROJECT}
+    pull_policy: never
+    networks: []
+
+  e2e:
+    image: croc-it-runtime:${CROC_IT_PROJECT}
+    pull_policy: never
+    entrypoint: ["/usr/local/bin/it-e2e.sh"]
+    environment:
+      CROC_IT_CODE: ${CROC_IT_CODE}
+      CROC_RELAY: relay:${CROC_IT_RELAY_PORT}
+      CROC_IT_TIMEOUT: ${CROC_IT_E2E_TIMEOUT:-60}
+    depends_on:
+      relay:
+        condition: service_healthy
+    volumes:
+      - fixtures:/fixtures:ro
+      - received:/received
+    tmpfs:
+      - /work
+    networks: [it]
+    stop_grace_period: 2s
+
+volumes:
+  # fixtures: optional dev-seeded inputs (read-only for the test).
+  # received: output of the real transfer. Separate on purpose, both are
+  # project-scoped and wiped by `docker compose down -v`.
+  fixtures:
+  received:
+
+networks:
+  it:

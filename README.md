@@ -610,6 +610,59 @@ service's deployment-only port 9020. Disco cannot generate host port mappings
 from an environment variable. Make sure the relay TCP ports are also open in
 the server's firewall or cloud security group.
 
+## Integration test orchestration
+
+[`deploy/it`](deploy/it) contains a self-contained docker compose stack that
+builds the croc binary from the current commit and tests only that binary —
+never a host-installed croc, never a `go install`ed one. Base images are
+pinned by tag and digest in [`deploy/it/Dockerfile`](deploy/it/Dockerfile), so
+every machine builds the same layers; with no network the build fails loudly
+instead of floating to `latest`.
+
+One command runs the whole pipeline — build, relay health gate (every relay
+port must accept TCP, bounded by a timeout), unit tests, and a real
+send/receive transfer through the orchestrated relay verified by SHA-256:
+
+```bash
+./deploy/it/run.sh
+```
+
+Any failure — build, healthcheck, unit test, or the transfer itself — exits
+non-zero. Log prefixes tell you which stage failed: `[it:run]` orchestration,
+`[it:unit]` unit tests, `[it:e2e]` the transfer, plus compose's per-service
+prefixes (`relay-1`, `unit-1`, `e2e-1`).
+
+Parallel stacks on one machine cannot collide: nothing is published to the
+host and all containers, networks, volumes, and the default room code are
+scoped to the compose project. The default project name already contains a
+hash of the repo path, so separate checkouts never interfere; to run a second
+stack from the same checkout, just pick another project name:
+
+```bash
+CROC_IT_PROJECT=croc-it-2 ./deploy/it/run.sh
+```
+
+Everything is injectable via environment variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CROC_IT_PROJECT` | `croc-it-<path hash>` | Compose project; isolates parallel stacks |
+| `CROC_IT_PORTS` | `9009,9010,9011,9012,9013` | Relay ports (container-internal) |
+| `CROC_IT_CODE` | `it-<project>-room` | Room code for the e2e transfer |
+| `CROC_IT_HEALTH_TIMEOUT` | `120` | Seconds to wait for a healthy relay |
+| `CROC_IT_E2E_TIMEOUT` | `60` | Seconds bounding each croc invocation |
+| `CROC_IT_KEEP` | `0` | Set to `1` to keep the stack for debugging |
+| `CROC_IT_PUBLISH` | `0` | Set to `1` to publish relay ports on `127.0.0.1` (`CROC_IT_PUB_1..5`) |
+| `CROC_IT_FIXTURES_DIR` | unset | Bind-mount a dev fixture dir at `/fixtures` (read-only); a `payload.bin` there replaces the generated payload |
+
+Dev fixtures and test outputs never mix: fixtures are mounted read-only and
+received files land in a separate project-scoped volume. Cleanup is automatic
+after each run; to tear down manually (containers, network, and volumes):
+
+```bash
+./deploy/it/run.sh clean
+```
+
 ## Acknowledgements
 
 `croc` has evolved through many iterations, and I am thankful for the contributions! Special thanks to:

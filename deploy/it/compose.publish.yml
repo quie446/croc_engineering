@@ -1,0 +1,14 @@
+# Optional overlay (CROC_IT_PUBLISH=1): expose the relay on the host for
+# manual debugging, e.g. `croc --relay 127.0.0.1:9009 myfile`.
+#
+# Host ports are injectable so two published stacks can coexist:
+#   CROC_IT_PUBLISH=1 CROC_IT_PUB_1=19009 ... ./deploy/it/run.sh
+# Assumes the container-side ports are the defaults (9009-9013).
+services:
+  relay:
+    ports:
+      - "127.0.0.1:${CROC_IT_PUB_1:-9009}:9009"
+      - "127.0.0.1:${CROC_IT_PUB_2:-9010}:9010"
+      - "127.0.0.1:${CROC_IT_PUB_3:-9011}:9011"
+      - "127.0.0.1:${CROC_IT_PUB_4:-9012}:9012"
+      - "127.0.0.1:${CROC_IT_PUB_5:-9013}:9013"
