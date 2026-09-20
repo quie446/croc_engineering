@@ -30,7 +30,7 @@ jobs:
           - opensuse/leap:16.0
           - opensuse/tumbleweed:latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.revision }}
       - uses: actions/download-artifact@v8
